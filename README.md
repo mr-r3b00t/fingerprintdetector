@@ -96,6 +96,12 @@ Or click **Code > Download ZIP** on GitHub and extract the ZIP file.
 
 ---
 
+## Acknowledgements
+
+Thanks to **Horatio** for suggesting the share to social media feature!
+
+---
+
 ## License
 
 Copyright Xservus Limited. All rights reserved.

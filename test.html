@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fingerprint Detector - Test Page</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; padding: 24px; line-height: 1.6;
+    }
+    h1 { font-size: 24px; margin-bottom: 4px; color: #fff; }
+    .subtitle { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
+    .section { background: #1e293b; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; border: 1px solid #334155; }
+    .section-title { font-size: 14px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .section-title .status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; }
+    .status-done { background: #166534; color: #4ade80; }
+    .status-running { background: #854d0e; color: #fbbf24; }
+    .result { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 11.5px; color: #94a3b8; padding: 4px 0; border-bottom: 1px solid #334155; word-break: break-all; }
+    .result:last-child { border-bottom: none; }
+    .result .label { color: #e2e8f0; font-weight: 600; }
+    .result .value { color: #a78bfa; }
+    .result .blocked { color: #f87171; }
+    .result .found { color: #4ade80; }
+    .result .not-found { color: #64748b; }
+    .ext-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .ext-item { font-family: monospace; font-size: 11px; padding: 6px 8px; background: #0f172a; border-radius: 6px; }
+    .ext-name { color: #e2e8f0; font-weight: 600; font-size: 12px; }
+    .ext-id { color: #64748b; font-size: 9.5px; word-break: break-all; }
+    .btn { background: #3b82f6; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { background: #475569; cursor: not-allowed; }
+    .progress { margin-top: 12px; height: 4px; background: #334155; border-radius: 2px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
+    .log { margin-top: 12px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 10.5px; color: #64748b; }
+    .log-entry { padding: 2px 0; }
+    .warn { color: #fbbf24; }
+    .footer { text-align: center; color: #475569; font-size: 11px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <h1>Fingerprint Detector Test Page</h1>
+  <p class="subtitle">This page simulates real-world fingerprinting techniques and extension enumeration. Open the Fingerprint Detector popup to see what gets caught.</p>
+
+  <button class="btn" id="run-btn" onclick="runAllTests()">Run All Fingerprinting Tests</button>
+  <div class="progress"><div class="progress-bar" id="progress"></div></div>
+
+  <div id="results"></div>
+
+  <div class="section" style="margin-top: 16px;">
+    <div class="section-title">Test Log</div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="footer">Copyright Xservus Limited - Test Version | github.com/mr-r3b00t/fingerprintdetector</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// TOP 10 CHROME EXTENSIONS TO PROBE
+// ═══════════════════════════════════════════════════════════════════
+const EXTENSIONS = [
+  { name: 'uBlock Origin', id: 'cjpalhdlnbpafiamejdnhcphjbkeiagm', resource: 'web-accessible-resources/noop.js' },
+  { name: 'Adblock Plus', id: 'cfhdojbkjhnklbpkdaibdccddilifddb', resource: 'icons/detailed/abp-16.png' },
+  { name: 'Google Translate', id: 'aapbdbdomjkkjkaonfhkkikfgjllcleb', resource: 'popup_css_compiled.css' },
+  { name: 'LastPass', id: 'hdokiejnpimakedhajhdlcegonlfsmit', resource: 'images/icon_16.png' },
+  { name: 'Grammarly', id: 'kbfnbcaeplbcioakkpcpgfkobkghlhen', resource: 'src/shared/assets/extension-icon.svg' },
+  { name: 'Dark Reader', id: 'eimadpbcbfnmbkopoojfekhnkhdbieeh', resource: 'ui/popup/index.html' },
+  { name: 'PayPal Honey', id: 'bmnlcjabgnpnenekpadlanbbkooimhnj', resource: 'pages/iframe.html' },
+  { name: 'Bitwarden', id: 'nngceckbapebfimnlniiiahkandclblb', resource: 'images/icon16.png' },
+  { name: 'Privacy Badger', id: 'pkehgijcmpdhfbdbbnkijodmdjhbjlgp', resource: 'skin/logo.svg' },
+  { name: 'MetaMask', id: 'nkbihfbeogaeaoehlefnkodbefgpgknn', resource: 'images/icon-16.png' },
+];
+
+const results = {};
+let totalTests = 0;
+let completedTests = 0;
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry' + (cls ? ` ${cls}` : '');
+  entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateProgress() {
+  completedTests++;
+  document.getElementById('progress').style.width = `${(completedTests / totalTests) * 100}%`;
+}
+
+function addSection(id, title) {
+  const container = document.getElementById('results');
+  const section = document.createElement('div');
+  section.className = 'section';
+  section.id = `section-${id}`;
+  section.innerHTML = `<div class="section-title">${title} <span class="status status-running" id="status-${id}">Running</span></div><div id="content-${id}"></div>`;
+  container.appendChild(section);
+  return document.getElementById(`content-${id}`);
+}
+
+function markDone(id) {
+  const status = document.getElementById(`status-${id}`);
+  if (status) { status.textContent = 'Done'; status.className = 'status status-done'; }
+}
+
+function addResult(contentEl, label, value, cls) {
+  const div = document.createElement('div');
+  div.className = 'result';
+  div.innerHTML = `<span class="label">${label}:</span> <span class="${cls || 'value'}">${value}</span>`;
+  contentEl.appendChild(div);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FINGERPRINTING TESTS
+// ═══════════════════════════════════════════════════════════════════
+
+async function testCanvas(content) {
+  log('Testing canvas fingerprinting...');
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 280; canvas.height = 60;
+    const ctx = canvas.getContext('2d');
+
+    // Draw text with specific styling (standard fingerprint technique)
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = '#069';
+    ctx.font = '11pt Arial';
+    ctx.fillText('Cwm fjordbank glyphs vext quiz, \ud83d\ude03', 2, 15);
+    ctx.fillStyle = 'rgba(102,204,0,0.7)';
+    ctx.font = '18pt Arial';
+    ctx.fillText('Cwm fjordbank glyphs vext quiz, \ud83d\ude03', 4, 45);
+
+    const dataUrl = canvas.toDataURL();
+    addResult(content, 'canvas.toDataURL', dataUrl.substring(0, 80) + '...');
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    addResult(content, 'canvas.getImageData', `ImageData(${imageData.width}x${imageData.height}, ${imageData.data.length} bytes)`);
+
+    canvas.toBlob((blob) => {
+      addResult(content, 'canvas.toBlob', blob ? `Blob(${blob.size} bytes, ${blob.type})` : 'null');
+    });
+  } catch (e) { addResult(content, 'Canvas Error', e.message, 'blocked'); }
+  updateProgress();
+  markDone('canvas');
+}
+
+async function testWebGL(content) {
+  log('Testing WebGL fingerprinting...');
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) { addResult(content, 'WebGL', 'Not available', 'blocked'); return; }
+
+    addResult(content, 'VENDOR', gl.getParameter(gl.VENDOR));
+    addResult(content, 'RENDERER', gl.getParameter(gl.RENDERER));
+    addResult(content, 'VERSION', gl.getParameter(gl.VERSION));
+    addResult(content, 'SHADING_LANGUAGE', gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+    addResult(content, 'MAX_TEXTURE_SIZE', gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    addResult(content, 'MAX_RENDERBUFFER', gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext) {
+      addResult(content, 'UNMASKED_VENDOR', gl.getParameter(ext.UNMASKED_VENDOR_WEBGL));
+      addResult(content, 'UNMASKED_RENDERER', gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
+    } else {
+      addResult(content, 'WEBGL_debug_renderer_info', 'Not available', 'blocked');
+    }
+
+    const extensions = gl.getSupportedExtensions();
+    addResult(content, 'Extensions', `${extensions ? extensions.length : 0} extensions`);
+
+    const fmt = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_FLOAT);
+    addResult(content, 'ShaderPrecision', fmt ? `precision:${fmt.precision} range:[${fmt.rangeMin},${fmt.rangeMax}]` : 'null');
+  } catch (e) { addResult(content, 'WebGL Error', e.message, 'blocked'); }
+  updateProgress();
+  markDone('webgl');
+}
+
+async function testAudio(content) {
+  log('Testing audio fingerprinting...');
+  try {
+    const AudioCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!AudioCtx) { addResult(content, 'AudioContext', 'Not available', 'blocked'); return; }
+
+    const ctx = new AudioCtx(1, 44100, 44100);
+    const oscillator = ctx.createOscillator();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(10000, ctx.currentTime);
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-50, ctx.currentTime);
+    compressor.knee.setValueAtTime(40, ctx.currentTime);
+    compressor.ratio.setValueAtTime(12, ctx.currentTime);
+    compressor.attack.setValueAtTime(0, ctx.currentTime);
+    compressor.release.setValueAtTime(0.25, ctx.currentTime);
+
+    oscillator.connect(compressor);
+    compressor.connect(ctx.destination);
+    oscillator.start(0);
+
+    const buffer = await ctx.startRendering();
+    const channelData = buffer.getChannelData(0);
+
+    // Sum a portion of the audio output (standard fingerprint technique)
+    let sum = 0;
+    for (let i = 4500; i < 5000; i++) {
+      sum += Math.abs(channelData[i]);
+    }
+
+    addResult(content, 'AudioContext fingerprint', sum.toString());
+    addResult(content, 'Sample rate', buffer.sampleRate);
+    addResult(content, 'Channel data length', channelData.length);
+    addResult(content, 'Channel data[4500]', channelData[4500]);
+
+    // Also test AnalyserNode
+    const realtime = new AudioContext();
+    const analyser = realtime.createAnalyser();
+    analyser.fftSize = 256;
+    const freqData = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(freqData);
+    addResult(content, 'AnalyserNode freqData[0]', freqData[0]);
+    realtime.close();
+  } catch (e) { addResult(content, 'Audio Error', e.message, 'blocked'); }
+  updateProgress();
+  markDone('audio');
+}
+
+async function testHardware(content) {
+  log('Testing hardware fingerprinting...');
+  try {
+    addResult(content, 'navigator.hardwareConcurrency', navigator.hardwareConcurrency);
+    addResult(content, 'navigator.deviceMemory', navigator.deviceMemory);
+    addResult(content, 'navigator.maxTouchPoints', navigator.maxTouchPoints);
+    addResult(content, 'navigator.platform', navigator.platform);
+
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      addResult(content, 'mediaDevices.enumerateDevices', `${devices.length} devices`);
+      devices.forEach((d, i) => {
+        addResult(content, `  Device ${i}`, `${d.kind}: ${d.label || '(unlabeled)'}`);
+      });
+    }
+  } catch (e) { addResult(content, 'Hardware Error', e.message, 'blocked'); }
+  updateProgress();
+  markDone('hardware');
+}
+
+async function testScreen(content) {
+  log('Testing screen fingerprinting...');
+  addResult(content, 'screen.width', screen.width);
+  addResult(content, 'screen.height', screen.height);
+  addResult(content, 'screen.colorDepth', screen.colorDepth);
+  addResult(content, 'screen.pixelDepth', screen.pixelDepth);
+  addResult(content, 'screen.availWidth', screen.availWidth);
+  addResult(content, 'screen.availHeight', screen.availHeight);
+  addResult(content, 'window.devicePixelRatio', window.devicePixelRatio);
+  updateProgress();
+  markDone('screen');
+}
+
+async function testUAPlatform(content) {
+  log('Testing UA / Platform fingerprinting...');
+  addResult(content, 'navigator.userAgent', navigator.userAgent);
+  addResult(content, 'navigator.platform', navigator.platform);
+  addResult(content, 'navigator.language', navigator.language);
+  addResult(content, 'navigator.languages', JSON.stringify(navigator.languages));
+  addResult(content, 'navigator.vendor', navigator.vendor);
+  addResult(content, 'navigator.doNotTrack', navigator.doNotTrack);
+  addResult(content, 'navigator.cookieEnabled', navigator.cookieEnabled);
+
+  // Timezone
+  addResult(content, 'Date.getTimezoneOffset', new Date().getTimezoneOffset());
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    addResult(content, 'Intl.DateTimeFormat.timeZone', tz);
+  } catch (_) {}
+
+  // Client hints
+  if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+    try {
+      const hints = await navigator.userAgentData.getHighEntropyValues([
+        'architecture', 'bitness', 'fullVersionList', 'model', 'platform', 'platformVersion'
+      ]);
+      addResult(content, 'UA High Entropy', JSON.stringify(hints).substring(0, 150) + '...');
+    } catch (e) { addResult(content, 'UA High Entropy', e.message, 'blocked'); }
+  }
+  updateProgress();
+  markDone('ua');
+}
+
+async function testPlugins(content) {
+  log('Testing plugin fingerprinting...');
+  addResult(content, 'navigator.plugins.length', navigator.plugins.length);
+  for (let i = 0; i < navigator.plugins.length; i++) {
+    const p = navigator.plugins[i];
+    addResult(content, `  Plugin ${i}`, `${p.name} (${p.filename})`);
+  }
+  addResult(content, 'navigator.mimeTypes.length', navigator.mimeTypes.length);
+  for (let i = 0; i < navigator.mimeTypes.length; i++) {
+    const m = navigator.mimeTypes[i];
+    addResult(content, `  MimeType ${i}`, `${m.type} (${m.suffixes})`);
+  }
+  updateProgress();
+  markDone('plugins');
+}
+
+async function testFonts(content) {
+  log('Testing font fingerprinting (CSS + measureText)...');
+  const testFonts = [
+    'Arial', 'Arial Black', 'Comic Sans MS', 'Courier New', 'Georgia',
+    'Impact', 'Lucida Console', 'Palatino', 'Tahoma', 'Times New Roman',
+    'Trebuchet MS', 'Verdana', 'Wingdings', 'Helvetica', 'Monaco',
+    'Andale Mono', 'Futura', 'Gill Sans', 'Optima', 'Zapfino',
+    'Calibri', 'Cambria', 'Consolas', 'Segoe UI', 'Candara',
+  ];
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const detected = [];
+
+  // measureText-based font detection
+  const baseWidth = ctx.measureText('mmmmmmmmmmlli').width;
+  ctx.font = '72px monospace';
+  const monoWidth = ctx.measureText('mmmmmmmmmmlli').width;
+
+  for (const font of testFonts) {
+    ctx.font = `72px '${font}', monospace`;
+    const w = ctx.measureText('mmmmmmmmmmlli').width;
+    if (w !== monoWidth) detected.push(font);
+  }
+
+  addResult(content, 'measureText calls', `${testFonts.length} fonts tested`);
+  addResult(content, 'Fonts detected', `${detected.length}: ${detected.join(', ')}`);
+
+  // CSS-based font detection (offsetWidth)
+  const testDiv = document.createElement('div');
+  testDiv.style.cssText = 'position:absolute;left:-9999px;font-size:72px;';
+  testDiv.textContent = 'mmmmmmmmmmlli';
+  document.body.appendChild(testDiv);
+
+  testDiv.style.fontFamily = 'monospace';
+  const cssBaseWidth = testDiv.offsetWidth;
+  let cssDetected = 0;
+
+  for (const font of testFonts) {
+    testDiv.style.fontFamily = `'${font}', monospace`;
+    if (testDiv.offsetWidth !== cssBaseWidth) cssDetected++;
+  }
+
+  document.body.removeChild(testDiv);
+  addResult(content, 'CSS offsetWidth probes', `${testFonts.length} fonts, ${cssDetected} detected`);
+
+  updateProgress();
+  markDone('fonts');
+}
+
+async function testWebRTC(content) {
+  log('Testing WebRTC fingerprinting...');
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc.createDataChannel('');
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    addResult(content, 'RTCPeerConnection', 'Created successfully');
+    addResult(content, 'SDP offer', offer.sdp ? offer.sdp.substring(0, 100) + '...' : 'empty');
+
+    // Wait briefly for ICE candidates
+    await new Promise((resolve) => {
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          addResult(content, 'ICE Candidate', e.candidate.candidate.substring(0, 80) + '...');
+        } else {
+          resolve();
+        }
+      };
+      setTimeout(resolve, 3000);
+    });
+
+    pc.close();
+  } catch (e) {
+    addResult(content, 'WebRTC', e.message, 'blocked');
+  }
+  updateProgress();
+  markDone('webrtc');
+}
+
+async function testBattery(content) {
+  log('Testing battery fingerprinting...');
+  try {
+    if (navigator.getBattery) {
+      const battery = await navigator.getBattery();
+      addResult(content, 'charging', battery.charging);
+      addResult(content, 'chargingTime', battery.chargingTime);
+      addResult(content, 'dischargingTime', battery.dischargingTime);
+      addResult(content, 'level', battery.level);
+    } else {
+      addResult(content, 'Battery API', 'Not available');
+    }
+  } catch (e) { addResult(content, 'Battery', e.message, 'blocked'); }
+  updateProgress();
+  markDone('battery');
+}
+
+async function testStorage(content) {
+  log('Testing storage fingerprinting...');
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      addResult(content, 'storage.estimate.quota', est.quota);
+      addResult(content, 'storage.estimate.usage', est.usage);
+    }
+  } catch (e) { addResult(content, 'Storage', e.message, 'blocked'); }
+  updateProgress();
+  markDone('storage');
+}
+
+async function testConnection(content) {
+  log('Testing connection fingerprinting...');
+  try {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      addResult(content, 'connection.type', conn.type);
+      addResult(content, 'connection.effectiveType', conn.effectiveType);
+      addResult(content, 'connection.downlink', conn.downlink);
+      addResult(content, 'connection.rtt', conn.rtt);
+      addResult(content, 'connection.saveData', conn.saveData);
+    } else {
+      addResult(content, 'Network Information API', 'Not available');
+    }
+  } catch (e) { addResult(content, 'Connection', e.message, 'blocked'); }
+  updateProgress();
+  markDone('connection');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXTENSION ENUMERATION
+// ═══════════════════════════════════════════════════════════════════
+
+async function testExtensions(content) {
+  log('Probing for installed extensions...');
+
+  const grid = document.createElement('div');
+  grid.className = 'ext-grid';
+  content.appendChild(grid);
+
+  for (const ext of EXTENSIONS) {
+    const item = document.createElement('div');
+    item.className = 'ext-item';
+    item.innerHTML = `<div class="ext-name">${ext.name}</div><div class="ext-id">${ext.id}</div>`;
+    grid.appendChild(item);
+
+    // Probe via fetch
+    try {
+      const url = `chrome-extension://${ext.id}/${ext.resource}`;
+      const resp = await fetch(url, { mode: 'no-cors' }).catch(() => null);
+      if (resp && resp.type !== 'error') {
+        item.style.borderLeft = '3px solid #4ade80';
+        item.innerHTML += `<div class="found">DETECTED (fetch)</div>`;
+        log(`  FOUND: ${ext.name}`, 'warn');
+      } else {
+        item.innerHTML += `<div class="not-found">Not detected</div>`;
+      }
+    } catch (_) {
+      item.innerHTML += `<div class="not-found">Not detected</div>`;
+    }
+
+    // Also probe via Image
+    const img = new Image();
+    img.src = `chrome-extension://${ext.id}/${ext.resource}`;
+
+    // Also probe via XHR
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('HEAD', `chrome-extension://${ext.id}/manifest.json`);
+      xhr.send();
+    } catch (_) {}
+
+    updateProgress();
+  }
+
+  markDone('extensions');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RUN ALL TESTS
+// ═══════════════════════════════════════════════════════════════════
+
+async function runAllTests() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('log').innerHTML = '';
+  completedTests = 0;
+
+  const tests = [
+    { id: 'extensions', title: '&#128065;&#65039; Extension Enumeration (Top 10)', fn: testExtensions },
+    { id: 'canvas', title: '&#127912; Canvas Fingerprinting', fn: testCanvas },
+    { id: 'webgl', title: '&#128314; WebGL Fingerprinting', fn: testWebGL },
+    { id: 'audio', title: '&#128266; Audio Fingerprinting', fn: testAudio },
+    { id: 'hardware', title: '&#128421;&#65039; Hardware Fingerprinting', fn: testHardware },
+    { id: 'screen', title: '&#128241; Screen Fingerprinting', fn: testScreen },
+    { id: 'ua', title: '&#128269; UA / Platform Fingerprinting', fn: testUAPlatform },
+    { id: 'plugins', title: '&#129513; Plugin Fingerprinting', fn: testPlugins },
+    { id: 'fonts', title: '&#128292; Font Fingerprinting', fn: testFonts },
+    { id: 'webrtc', title: '&#127760; WebRTC Fingerprinting', fn: testWebRTC },
+    { id: 'battery', title: '&#128267; Battery Fingerprinting', fn: testBattery },
+    { id: 'storage', title: '&#128190; Storage Fingerprinting', fn: testStorage },
+    { id: 'connection', title: '&#128246; Connection Fingerprinting', fn: testConnection },
+  ];
+
+  totalTests = tests.length + EXTENSIONS.length; // extra for each extension probe
+
+  log('Starting all fingerprinting tests...');
+
+  for (const test of tests) {
+    const content = addSection(test.id, test.title);
+    await test.fn(content);
+  }
+
+  log('All tests complete!');
+  btn.textContent = 'Run Again';
+  btn.disabled = false;
+  document.getElementById('progress').style.width = '100%';
+}
+</script>
+</body>
+</html>
