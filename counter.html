@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How the Counter Works - Fingerprint Detector</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; padding: 24px; line-height: 1.7;
+      max-width: 900px; margin: 0 auto;
+    }
+    h1 { font-size: 28px; color: #fff; margin-bottom: 4px; }
+    h2 { font-size: 18px; color: #38bdf8; margin: 28px 0 12px; border-bottom: 1px solid #334155; padding-bottom: 6px; }
+    h3 { font-size: 14px; color: #a78bfa; margin: 16px 0 8px; }
+    .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 28px; }
+    p { margin-bottom: 12px; font-size: 14px; }
+    code {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12.5px; color: #a78bfa;
+    }
+    pre {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      padding: 14px 16px; margin: 10px 0 16px; overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 12px;
+      line-height: 1.6; color: #e2e8f0;
+    }
+    .comment { color: #64748b; }
+    .keyword { color: #f472b6; }
+    .string { color: #4ade80; }
+    .number { color: #fbbf24; }
+    .fn { color: #38bdf8; }
+    .diagram {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 20px; margin: 16px 0; text-align: center; font-family: monospace;
+      font-size: 13px; line-height: 2;
+    }
+    .diagram .arrow { color: #38bdf8; }
+    .diagram .component { display: inline-block; background: #334155; padding: 4px 12px; border-radius: 6px; margin: 0 4px; color: #fff; font-weight: 600; }
+    .diagram .data { display: inline-block; background: #3b2f63; padding: 4px 10px; border-radius: 6px; margin: 0 4px; color: #a78bfa; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 13px; }
+    th { background: #1e293b; color: #38bdf8; text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+    tr:nth-child(even) { background: rgba(30,41,59,0.5); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+    .badge-green { background: #166534; color: #4ade80; }
+    .badge-orange { background: #854d0e; color: #fbbf24; }
+    .badge-red { background: #7f1d1d; color: #f87171; }
+    .note {
+      background: #1e293b; border-left: 4px solid #3b82f6; padding: 12px 16px;
+      margin: 12px 0; border-radius: 0 8px 8px 0; font-size: 13px;
+    }
+    .warn {
+      background: #1e1a0e; border-left: 4px solid #f59e0b; padding: 12px 16px;
+      margin: 12px 0; border-radius: 0 8px 8px 0; font-size: 13px;
+    }
+    .footer { text-align: center; color: #475569; font-size: 11px; margin-top: 32px; padding-top: 16px; border-top: 1px solid #1e293b; }
+  </style>
+</head>
+<body>
+
+<h1>How the Counter Works</h1>
+<p class="subtitle">A complete technical explanation of how Fingerprint Detector counts, categorises, and scores fingerprinting activity.</p>
+
+<h2>1. The Data Flow</h2>
+
+<p>Every number you see in the popup badge and UI follows this path:</p>
+
+<div class="diagram">
+  <span class="component">inject.js</span>
+  <span class="arrow">&rarr; postMessage &rarr;</span>
+  <span class="component">content.js</span>
+  <span class="arrow">&rarr; chrome.runtime.sendMessage &rarr;</span>
+  <span class="component">background.js</span>
+  <span class="arrow">&rarr; sendResponse &rarr;</span>
+  <span class="component">popup.js</span>
+  <br><br>
+  <span class="data">API intercepted</span>
+  <span class="arrow">&rarr;</span>
+  <span class="data">{ category, api, returnValue, blocked }</span>
+  <span class="arrow">&rarr;</span>
+  <span class="data">tabData.entries[]</span>
+  <span class="arrow">&rarr;</span>
+  <span class="data">Badge + Popup UI</span>
+</div>
+
+<h2>2. What Gets Counted</h2>
+
+<p>Every time a page calls a fingerprinting-related API, <code>inject.js</code> intercepts it and calls the <code>report()</code> function:</p>
+
+<pre><span class="keyword">function</span> <span class="fn">report</span>(category, api, returnValue, blocked) {
+  window.<span class="fn">postMessage</span>({
+    type: <span class="string">'__fp_detect__'</span>,
+    category,       <span class="comment">// e.g. 'canvas', 'webgl', 'audio'</span>
+    api,            <span class="comment">// e.g. 'canvas.toDataURL', 'navigator.userAgent'</span>
+    timestamp: Date.<span class="fn">now</span>(),
+    stack: <span class="fn">getCallerStack</span>(),   <span class="comment">// which script called it</span>
+    returnValue: <span class="fn">summarizeValue</span>(returnValue),
+    blocked: !!blocked,         <span class="comment">// true if ghost/spoof replaced the value</span>
+  }, <span class="string">'*'</span>);
+}</pre>
+
+<p>Each call to <code>report()</code> = <strong>+1 to the counter</strong>. So the badge number is the total number of intercepted API calls, not the number of trackers or scripts.</p>
+
+<h2>3. Two Counters: totalCount vs entries.length</h2>
+
+<p>The background service worker tracks each tab's data:</p>
+
+<pre><span class="keyword">const</span> data = {
+  domain: <span class="string">'www.linkedin.com'</span>,
+  totalCount: <span class="number">535</span>,     <span class="comment">// Always incremented, never capped</span>
+  entries: [...],       <span class="comment">// Individual call records, capped at 10,000</span>
+  categoryCounts: {     <span class="comment">// Per-category totals, always accurate</span>
+    ua_platform: <span class="number">148</span>,
+    plugins: <span class="number">65</span>,
+    screen: <span class="number">24</span>,
+    <span class="comment">// ...</span>
+  }
+};</pre>
+
+<table>
+  <tr><th>Field</th><th>What it counts</th><th>Capped?</th><th>Used for</th></tr>
+  <tr><td><code>totalCount</code></td><td>Every API call received</td><td>No</td><td>Badge number, popup header, tweet</td></tr>
+  <tr><td><code>entries[]</code></td><td>Individual call records with full details</td><td>Yes (10,000 max)</td><td>Category breakdown, return values, stacks</td></tr>
+  <tr><td><code>categoryCounts</code></td><td>Per-category totals</td><td>No</td><td>Severity calculation, category sort order</td></tr>
+</table>
+
+<div class="note">
+  <strong>Why the cap?</strong> Some pages make thousands of API calls. Storing full details (stack trace, return value, timestamp) for every call would consume too much memory. After 10,000 entries, <code>totalCount</code> and <code>categoryCounts</code> keep incrementing but individual records stop being stored.
+</div>
+
+<h2>4. The Badge Number</h2>
+
+<p>The number on the extension icon in the toolbar is <code>totalCount</code>:</p>
+
+<pre><span class="keyword">function</span> <span class="fn">updateBadge</span>(tabId) {
+  <span class="keyword">const</span> count = data.totalCount;
+  <span class="keyword">const</span> text = count > <span class="number">999</span> ? <span class="string">'999+'</span> : String(count);
+  chrome.action.<span class="fn">setBadgeText</span>({ tabId, text });
+  chrome.action.<span class="fn">setBadgeBackgroundColor</span>({
+    tabId,
+    color: SEVERITY_BADGE_BG[severity],  <span class="comment">// green, orange, or red</span>
+  });
+}</pre>
+
+<p>The badge colour indicates severity:</p>
+
+<table>
+  <tr><th>Colour</th><th>Level</th><th>Meaning</th></tr>
+  <tr><td><span class="badge badge-green">123</span></td><td>Low</td><td>Normal API usage, likely not fingerprinting</td></tr>
+  <tr><td><span class="badge badge-orange">456</span></td><td>Medium</td><td>Moderate cross-category probing</td></tr>
+  <tr><td><span class="badge badge-red">999+</span></td><td>High</td><td>Heavy fingerprinting activity across many categories</td></tr>
+</table>
+
+<h2>5. Severity Calculation</h2>
+
+<p>Severity is determined by three factors: total API call count, number of categories probed, and whether suspicious categories are involved.</p>
+
+<h3>Suspicious Categories</h3>
+<p>These are APIs rarely needed for normal page functionality but commonly used for fingerprinting:</p>
+<pre>[<span class="string">'audio'</span>, <span class="string">'fonts'</span>, <span class="string">'webrtc'</span>, <span class="string">'battery'</span>, <span class="string">'connection'</span>, <span class="string">'storage'</span>, <span class="string">'extensions'</span>]</pre>
+
+<h3>Aggressive Combo</h3>
+<p>Canvas + WebGL + Audio together is a known fingerprinting pattern:</p>
+<pre><span class="keyword">const</span> aggressiveCombo = hasCanvas && hasWebgl && hasAudio;</pre>
+
+<h3>Thresholds</h3>
+<table>
+  <tr><th>Level</th><th>Triggers (any one of these)</th></tr>
+  <tr>
+    <td><span class="badge badge-red">HIGH</span></td>
+    <td>
+      &bull; 8+ categories AND 100+ calls<br>
+      &bull; Canvas+WebGL+Audio combo AND 75+ calls<br>
+      &bull; 3+ suspicious categories AND 50+ calls<br>
+      &bull; 200+ total calls (any categories)
+    </td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-orange">MEDIUM</span></td>
+    <td>
+      &bull; 5+ categories AND 30+ calls<br>
+      &bull; 2+ suspicious categories AND 20+ calls<br>
+      &bull; Canvas+WebGL+Audio combo AND 15+ calls<br>
+      &bull; 75+ total calls
+    </td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-green">LOW</span></td>
+    <td>Everything else</td>
+  </tr>
+</table>
+
+<h2>6. The 13 Categories</h2>
+
+<table>
+  <tr><th>Category</th><th>APIs Monitored</th><th>Suspicious?</th></tr>
+  <tr><td>Canvas</td><td>toDataURL, toBlob, getImageData</td><td>No</td></tr>
+  <tr><td>WebGL</td><td>getParameter, getExtension, getSupportedExtensions, getShaderPrecisionFormat</td><td>No</td></tr>
+  <tr><td>Audio</td><td>AudioContext, OfflineAudioContext, createOscillator, createDynamicsCompressor, createAnalyser, getChannelData, copyFromChannel, AnalyserNode methods</td><td>Yes</td></tr>
+  <tr><td>Plugins</td><td>navigator.plugins, navigator.mimeTypes</td><td>No</td></tr>
+  <tr><td>Hardware</td><td>hardwareConcurrency, deviceMemory, maxTouchPoints, enumerateDevices</td><td>No</td></tr>
+  <tr><td>Screen</td><td>width, height, colorDepth, pixelDepth, availWidth, availHeight, devicePixelRatio</td><td>No</td></tr>
+  <tr><td>Fonts</td><td>measureText (batched), CSS offsetWidth/offsetHeight probing</td><td>Yes</td></tr>
+  <tr><td>WebRTC</td><td>RTCPeerConnection, webkitRTCPeerConnection</td><td>Yes</td></tr>
+  <tr><td>Battery</td><td>navigator.getBattery</td><td>Yes</td></tr>
+  <tr><td>UA / Platform</td><td>userAgent, platform, language, languages, vendor, doNotTrack, cookieEnabled, DateTimeFormat timezone, getTimezoneOffset, getHighEntropyValues</td><td>No</td></tr>
+  <tr><td>Storage</td><td>storage.estimate</td><td>Yes</td></tr>
+  <tr><td>Connection</td><td>type, effectiveType, downlink, rtt, saveData</td><td>Yes</td></tr>
+  <tr><td>Extension Probing</td><td>fetch, XHR, Image.src, script.src, link.href, iframe.src, setAttribute targeting chrome-extension:// URLs</td><td>Yes</td></tr>
+</table>
+
+<h2>7. Blocked vs Detected</h2>
+
+<p>In the popup, you see two numbers:</p>
+<pre><span class="string">"535 API calls detected"</span>  <span class="comment">// totalCount</span>
+<span class="string">"400 blocked"</span>             <span class="comment">// entries where blocked === true</span></pre>
+
+<p>The <strong>blocked</strong> count only applies in Ghost or Spoof mode. An API call is marked <code>blocked: true</code> when the wrapper returns a fake value instead of the real one:</p>
+
+<pre><span class="comment">// Ghost mode example:</span>
+<span class="keyword">if</span> (mode === <span class="string">'ghost'</span>) {
+  <span class="keyword">const</span> fakeResult = GHOST[label]();  <span class="comment">// e.g. returns 1920 instead of real screen width</span>
+  <span class="fn">report</span>(category, label, fakeResult, <span class="keyword">true</span>);  <span class="comment">// blocked = true</span>
+  <span class="keyword">return</span> fakeResult;
+}
+
+<span class="comment">// Detect mode: real value returned, blocked = false</span>
+<span class="keyword">const</span> result = originalGet.<span class="fn">call</span>(<span class="keyword">this</span>);
+<span class="fn">report</span>(category, label, result, <span class="keyword">false</span>);  <span class="comment">// blocked = false</span>
+<span class="keyword">return</span> result;</pre>
+
+<div class="warn">
+  <strong>Why aren't all calls blocked?</strong> Some APIs are intentionally let through even in Ghost/Spoof mode (marked <code>null</code> in the value maps). For example, <code>audio.createOscillator</code> must work for pages to play sound &mdash; only the data extraction methods (<code>getChannelData</code>) are blocked.
+</div>
+
+<h2>8. The Popup Category Counts</h2>
+
+<p>Each category card in the popup shows how many entries are in <code>entries[]</code> for that category (not <code>categoryCounts</code>). They're sorted by count descending:</p>
+
+<pre><span class="keyword">const</span> sortedCategories = Object.<span class="fn">keys</span>(grouped).<span class="fn">sort</span>(
+  (a, b) => grouped[b].length - grouped[a].length
+);</pre>
+
+<p>Inside each category, entries are <strong>deduplicated by API name</strong>. If <code>navigator.userAgent</code> is called 50 times, you see one entry with "x50" instead of 50 separate entries. The return value shown is the <strong>most recent</strong> one.</p>
+
+<h2>9. The Tweet / Share Count</h2>
+
+<p>The share button composes a message using:</p>
+<pre><span class="keyword">const</span> total = currentData.totalCount;         <span class="comment">// e.g. 535</span>
+<span class="keyword">const</span> categories = Object.<span class="fn">keys</span>(categoryCounts).length;  <span class="comment">// e.g. 10</span>
+<span class="keyword">const</span> blocked = entries.<span class="fn">filter</span>(e => e.blocked).length;   <span class="comment">// e.g. 400</span>
+
+<span class="comment">// Result:</span>
+<span class="string">"We detected 535 fingerprinting API calls across 10 categories</span>
+<span class="string"> on www.linkedin.com and blocked 400 of them"</span></pre>
+
+<h2>10. When Counters Reset</h2>
+
+<table>
+  <tr><th>Event</th><th>What happens</th></tr>
+  <tr><td>Page navigation (same tab)</td><td>All data for that tab is cleared. Counter resets to 0.</td></tr>
+  <tr><td>Tab closed</td><td>Tab data deleted from memory.</td></tr>
+  <tr><td>Click "Clear" in popup</td><td>Tab data deleted. Badge disappears.</td></tr>
+  <tr><td>Extension reload</td><td>All data lost (stored in service worker memory, not persisted).</td></tr>
+  <tr><td>Switch mode</td><td>Data is <strong>not</strong> cleared. The mode takes effect on the next API call. Refresh the page to see full effect.</td></tr>
+</table>
+
+<h2>11. Overflow Behaviour</h2>
+
+<p>When <code>entries.length</code> reaches 10,000:</p>
+<ul style="margin: 8px 0 16px 24px; font-size: 13px;">
+  <li><code>totalCount</code> keeps incrementing (badge stays accurate)</li>
+  <li><code>categoryCounts</code> keeps incrementing (severity stays accurate)</li>
+  <li>New individual records are dropped (popup detail view stops growing)</li>
+  <li>Export JSON includes <code>"entriesCapped": true</code> to flag this</li>
+</ul>
+
+<div class="footer">Copyright Xservus Limited - Test Version | github.com/mr-r3b00t/fingerprintdetector</div>
+
+</body>
+</html>

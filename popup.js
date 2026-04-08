@@ -388,8 +388,11 @@ document.getElementById('clear-btn').addEventListener('click', async () => {
 document.getElementById('share-twitter-btn').addEventListener('click', () => {
   if (!currentData) return;
   const total = currentData.totalCount || currentData.entries.length;
+  const categories = Object.keys(currentData.categoryCounts || {}).length;
   const domain = currentData.domain || 'a website';
-  const text = `We found ${total} trackers on ${domain} using FingerprintDetector by @UK_Daniel_Card\n\nhttps://github.com/mr-r3b00t/fingerprintdetector`;
+  const blocked = currentData.entries ? currentData.entries.filter(e => e.blocked).length : 0;
+  const blockedPart = blocked > 0 ? ` and blocked ${blocked} of them` : '';
+  const text = `We detected ${total} fingerprinting API calls across ${categories} categories on ${domain}${blockedPart} using FingerprintDetector by @UK_Daniel_Card\n\nhttps://github.com/mr-r3b00t/fingerprintdetector`;
   const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 });
