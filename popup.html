@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="header-top">
+        <h1>Fingerprint Detector</h1>
+        <div class="header-buttons">
+          <button id="export-btn" title="Export report as JSON">Export</button>
+          <button id="clear-btn" title="Clear detections">Clear</button>
+        </div>
+      </div>
+      <div id="domain" class="domain"></div>
+      <div class="mode-section">
+        <div class="mode-label" id="mode-label">
+          <span class="mode-scope" id="mode-scope">Global default</span>
+        </div>
+        <div class="mode-controls">
+          <div class="mode-toggle" id="mode-toggle">
+            <button class="mode-btn" data-mode="detect" title="Monitor only">Detect</button>
+            <button class="mode-btn" data-mode="ghost" title="Block all fingerprinting data">Ghost</button>
+            <button class="mode-btn" data-mode="spoof" title="Return fake uniform data">Spoof</button>
+          </div>
+          <div class="mode-actions">
+            <button class="mode-action-btn" id="set-site-btn" title="Set mode for this site only">Set for site</button>
+            <button class="mode-action-btn" id="set-default-btn" title="Set as global default for all sites">Set as default</button>
+            <button class="mode-action-btn mode-reset-btn" id="reset-site-btn" title="Remove site override, use global default" style="display:none;">Reset to default</button>
+          </div>
+        </div>
+      </div>
+      <div id="summary" class="summary"></div>
+    </header>
+    <div id="categories"></div>
+    <div id="empty" class="empty" style="display:none;">
+      <div class="empty-icon">&#128274;</div>
+      <p>No fingerprinting detected on this page.</p>
+    </div>
+    <div id="share-bar" class="share-bar" style="display:none;">
+      <button id="share-twitter-btn" class="share-btn" title="Share results on X/Twitter">Post on &#120143;</button>
+    </div>
+    <div class="footer">
+      <div class="footer-copyright">Copyright Xservus Limited - Test Version</div>
+      <a id="github-link" class="footer-link" href="#" title="View on GitHub">github.com/mr-r3b00t/fingerprintdetector</a>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
