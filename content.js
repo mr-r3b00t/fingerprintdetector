@@ -25,6 +25,11 @@
     }
   }
 
+  // Pass our own extension ID to inject.js so it can exclude self-probes
+  if (document.documentElement) {
+    document.documentElement.dataset.fpExtId = chrome.runtime.id;
+  }
+
   // Ask background for the mode based on the TAB's primary URL
   // (not the iframe URL) so all frames in a tab share one mode.
   // This message round-trip is faster than the inject.js file fetch,

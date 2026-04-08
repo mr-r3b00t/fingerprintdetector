@@ -40,10 +40,11 @@
     }
   })();
 
-  // Extension UUID for filtering stack frames from this script
+  // Extension ID for filtering stack frames from this script
+  // Chrome extension IDs are 32 chars of [a-p], but some browsers use UUID format
   const EXT_UUID = (function () {
     try {
-      const match = SELF_URL.match(/[a-f0-9-]{36}/);
+      const match = SELF_URL.match(/[a-p]{32}|[a-f0-9-]{36}/);
       return match ? match[0] : '';
     } catch (_) { return ''; }
   })();
@@ -203,11 +204,8 @@
     // Canvas — block pixel data extraction
     'canvas.toDataURL': () => 'data:,',
     'canvas.getImageData': (orig, ctx, args) => new ImageData(args[2] || 1, args[3] || 1),
-    // WebGL — use same spoof values (null/empty is more fingerprintable)
+    // WebGL — values set after SPOOF is defined (see below)
     'webgl.getParameter': null, // handled specially in custom wrapper
-    'webgl.getExtension': null, // handled via SPOOF entry (shared)
-    'webgl.getSupportedExtensions': null, // handled via SPOOF entry (shared)
-    'webgl.getShaderPrecisionFormat': null, // let through (mostly uniform)
     // Hardware — most common Chrome values
     'navigator.hardwareConcurrency': () => 8,
     'navigator.deviceMemory': () => 8,
@@ -289,28 +287,9 @@
     'connection.downlink': () => 10,
     'connection.rtt': () => 50,
     'connection.saveData': () => false,
-    // Plugins — return standard Chrome PDF plugin set
-    'navigator.plugins': () => {
-      const pdfPlugin = {
-        name: 'PDF Viewer', filename: 'internal-pdf-viewer',
-        description: 'Portable Document Format', length: 1,
-        0: { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-        item: (i) => i === 0 ? pdfPlugin[0] : null,
-        namedItem: () => null,
-      };
-      const arr = [pdfPlugin];
-      arr.item = (i) => arr[i] || null;
-      arr.namedItem = (name) => arr.find(p => p.name === name) || null;
-      arr.refresh = () => {};
-      return arr;
-    },
-    'navigator.mimeTypes': () => {
-      const pdf = { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' };
-      const arr = [pdf];
-      arr.item = (i) => arr[i] || null;
-      arr.namedItem = (name) => arr.find(m => m.type === name) || null;
-      return arr;
-    },
+    // Plugins — same standard set as ghost (must match to avoid fingerprint divergence)
+    'navigator.plugins': makeStandardPlugins,
+    'navigator.mimeTypes': makeStandardMimeTypes,
     // Audio (let through — spoof mode allows functionality)
     'audio.createOscillator': null,
     'audio.createDynamicsCompressor': null,
@@ -372,6 +351,11 @@
     // Return the real precision format — these are mostly uniform across GPUs
     return original.apply(ctx, args);
   };
+
+  // Ghost shares the same WebGL spoofing as SPOOF
+  GHOST['webgl.getSupportedExtensions'] = SPOOF['webgl.getSupportedExtensions'];
+  GHOST['webgl.getExtension'] = SPOOF['webgl.getExtension'];
+  GHOST['webgl.getShaderPrecisionFormat'] = SPOOF['webgl.getShaderPrecisionFormat'];
 
   // WebGL spoof parameter map (common Intel UHD 630 values)
   const WEBGL_SPOOF_PARAMS = {
@@ -864,7 +848,11 @@
         }
         if (mode === 'spoof') {
           for (let i = 0; i < array.length; i += 100) {
-            array[i] = array[i] ^ 1;
+            if (array instanceof Float32Array) {
+              array[i] = array[i] + (array[i] * 0.0001);
+            } else {
+              array[i] = array[i] ^ 1;
+            }
           }
           report('audio', `audio.${method}`, array, true);
           return;
@@ -1100,11 +1088,97 @@
       return 300;
     }
     const result = origGetTimezoneOffset.call(this);
+    report('ua_platform', 'Date.getTimezoneOffset', result, false);
     return result;
   };
   Date.prototype.getTimezoneOffset.toString = () => origGetTimezoneOffset.toString();
   Object.defineProperties(Date.prototype.getTimezoneOffset, {
     length: { value: origGetTimezoneOffset.length },
     name: { value: origGetTimezoneOffset.name },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // EXTENSION ENUMERATION DETECTION
+  // ═══════════════════════════════════════════════════════════════════════
+  // Websites probe chrome-extension://<guid>/<resource> URLs to detect
+  // which extensions are installed. We intercept fetch, XHR, and element
+  // src/href setters to catch these probes and log the GUIDs targeted.
+
+  const EXT_URL_RE = /^chrome-extension:\/\/([a-p]{32}|[a-f0-9-]{36})\/?/i;
+  const SELF_EXT_ID = document.documentElement?.dataset?.fpExtId || '';
+
+  function extractExtensionId(url) {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(EXT_URL_RE);
+    return match ? match[1] : null;
+  }
+
+  function reportExtensionProbe(method, url) {
+    const extId = extractExtensionId(url);
+    if (!extId) return;
+    // Don't report probes for our own extension
+    if (SELF_EXT_ID && extId.toLowerCase() === SELF_EXT_ID.toLowerCase()) return;
+    report('extensions', `ext.probe.${method}`, extId, false);
+  }
+
+  // ─── fetch() ────────────────────────────────────────────────────────
+  const origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    const url = (typeof input === 'string') ? input : (input && input.url) || '';
+    reportExtensionProbe('fetch', url);
+    return origFetch.apply(this, arguments);
+  };
+  window.fetch.toString = () => origFetch.toString();
+  Object.defineProperties(window.fetch, {
+    length: { value: origFetch.length },
+    name: { value: origFetch.name },
+  });
+
+  // ─── XMLHttpRequest.open() ──────────────────────────────────────────
+  const origXHROpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    reportExtensionProbe('xhr', url);
+    return origXHROpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.open.toString = () => origXHROpen.toString();
+  Object.defineProperties(XMLHttpRequest.prototype.open, {
+    length: { value: origXHROpen.length },
+    name: { value: origXHROpen.name },
+  });
+
+  // ─── Element src/href setters (Image, script, link, iframe) ─────────
+  const elementsToWatch = [
+    [HTMLImageElement, 'src'],
+    [HTMLScriptElement, 'src'],
+    [HTMLLinkElement, 'href'],
+    [HTMLIFrameElement, 'src'],
+  ];
+
+  for (const [Ctor, prop] of elementsToWatch) {
+    const desc = Object.getOwnPropertyDescriptor(Ctor.prototype, prop);
+    if (!desc || !desc.set) continue;
+    const originalSet = desc.set;
+    Object.defineProperty(Ctor.prototype, prop, {
+      ...desc,
+      set(value) {
+        reportExtensionProbe(`element.${Ctor.name}.${prop}`, value);
+        return originalSet.call(this, value);
+      },
+    });
+  }
+
+  // ─── document.createElement + setAttribute interception ─────────────
+  // Some probes set src/href via setAttribute instead of the property
+  const origSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if ((name === 'src' || name === 'href') && typeof value === 'string') {
+      reportExtensionProbe('setAttribute', value);
+    }
+    return origSetAttribute.call(this, name, value);
+  };
+  Element.prototype.setAttribute.toString = () => origSetAttribute.toString();
+  Object.defineProperties(Element.prototype.setAttribute, {
+    length: { value: origSetAttribute.length },
+    name: { value: origSetAttribute.name },
   });
 })();

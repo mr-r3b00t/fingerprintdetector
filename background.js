@@ -18,6 +18,7 @@ const CATEGORY_LABELS = {
   ua_platform: 'UA / Platform',
   storage: 'Storage',
   connection: 'Connection',
+  extensions: 'Extension Probing',
 };
 
 function getSeverity(data) {
@@ -25,7 +26,7 @@ function getSeverity(data) {
   const total = data.totalCount || data.entries.length;
   const catCount = categories.size;
 
-  const suspiciousCategories = ['audio', 'fonts', 'webrtc', 'battery', 'connection', 'storage'];
+  const suspiciousCategories = ['audio', 'fonts', 'webrtc', 'battery', 'connection', 'storage', 'extensions'];
   const suspiciousCount = suspiciousCategories.filter((c) => categories.has(c)).length;
 
   const hasCanvas = categories.has('canvas');
@@ -132,23 +133,19 @@ async function setGlobalMode(mode) {
 const SPOOF_UA_HEADER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 async function updateHeaderRules() {
-  // Remove all existing dynamic rules first
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeIds = existing.map(r => r.id);
-  if (removeIds.length > 0) {
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
-  }
 
   const result = await chrome.storage.local.get(['fpGlobalMode', 'fpSiteModes']);
   const globalMode = result.fpGlobalMode || 'detect';
   const siteModes = result.fpSiteModes || {};
-  const rules = [];
+  const addRules = [];
   let ruleId = 1;
 
   // Create rules for each domain with ghost/spoof mode
   for (const [domain, mode] of Object.entries(siteModes)) {
     if (mode === 'ghost' || mode === 'spoof') {
-      rules.push({
+      addRules.push({
         id: ruleId++,
         priority: 2,
         action: {
@@ -168,7 +165,6 @@ async function updateHeaderRules() {
 
   // If global mode is ghost/spoof, add a catch-all rule (lower priority)
   if (globalMode === 'ghost' || globalMode === 'spoof') {
-    // Exclude domains that are explicitly set to 'detect'
     const detectDomains = Object.entries(siteModes)
       .filter(([_, m]) => m === 'detect')
       .map(([d]) => d);
@@ -190,12 +186,14 @@ async function updateHeaderRules() {
     if (detectDomains.length > 0) {
       rule.condition.excludedRequestDomains = detectDomains;
     }
-    rules.push(rule);
+    addRules.push(rule);
   }
 
-  if (rules.length > 0) {
-    await chrome.declarativeNetRequest.updateDynamicRules({ addRules: rules });
-  }
+  // Atomic update: remove old + add new in single call
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: removeIds,
+    addRules,
+  });
 }
 
 // ─── Message handlers ──────────────────────────────────────────────

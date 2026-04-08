@@ -13,6 +13,7 @@ const CATEGORY_ICONS = {
   ua_platform: '\uD83D\uDD0D',
   storage: '\uD83D\uDCBE',
   connection: '\uD83D\uDCF6',
+  extensions: '\uD83D\uDC41\uFE0F',
 };
 
 function formatTime(ts) {
@@ -147,6 +148,38 @@ function renderData(data) {
   emptyEl.style.display = 'none';
   shareBar.style.display = '';
   domainEl.textContent = data.domain;
+
+  // ─── Extension probe alert ──────────────────────────────────────
+  const extAlert = document.getElementById('ext-probe-alert');
+  const extList = document.getElementById('ext-probe-list');
+  const extEntries = data.entries.filter((e) => e.category === 'extensions');
+  if (extEntries.length > 0) {
+    // Collect unique extension IDs being probed
+    const probedIds = new Set();
+    for (const entry of extEntries) {
+      if (entry.returnValue) probedIds.add(entry.returnValue);
+    }
+    extAlert.style.display = '';
+    extList.innerHTML = '';
+    const uniqueIds = [...probedIds];
+    const countLabel = uniqueIds.length === 1 ? '1 extension' : `${uniqueIds.length} extensions`;
+    document.querySelector('.ext-probe-body').textContent =
+      `This site probed for ${countLabel} using ${extEntries.length} request${extEntries.length !== 1 ? 's' : ''}.`;
+    for (const id of uniqueIds.slice(0, 20)) {
+      const el = document.createElement('div');
+      el.className = 'ext-probe-id';
+      el.textContent = id;
+      extList.appendChild(el);
+    }
+    if (uniqueIds.length > 20) {
+      const more = document.createElement('div');
+      more.className = 'ext-probe-more';
+      more.textContent = `+ ${uniqueIds.length - 20} more`;
+      extList.appendChild(more);
+    }
+  } else {
+    extAlert.style.display = 'none';
+  }
 
   const total = totalCount;
   const severity = data.severity;
@@ -356,7 +389,7 @@ document.getElementById('share-twitter-btn').addEventListener('click', () => {
   if (!currentData) return;
   const total = currentData.totalCount || currentData.entries.length;
   const domain = currentData.domain || 'a website';
-  const text = `We found ${total} trackers on ${domain} using FingerprintDetector by @UK_Daniel_Card`;
+  const text = `We found ${total} trackers on ${domain} using FingerprintDetector by @UK_Daniel_Card\n\nhttps://github.com/mr-r3b00t/fingerprintdetector`;
   const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 });
