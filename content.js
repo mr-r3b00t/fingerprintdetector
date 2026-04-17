@@ -3,10 +3,11 @@
 // Also bridges mode state from extension storage to page context via data attribute
 (function () {
   'use strict';
+  const extensionApi = typeof browser !== 'undefined' ? browser : chrome;
 
   function isExtensionAlive() {
     try {
-      return !!chrome.runtime?.id;
+      return !!extensionApi.runtime?.id;
     } catch (_) {
       return false;
     }
@@ -27,14 +28,14 @@
 
   // Pass our own extension ID to inject.js so it can exclude self-probes
   if (document.documentElement) {
-    document.documentElement.dataset.fpExtId = chrome.runtime.id;
+    document.documentElement.dataset.fpExtId = extensionApi.runtime.id;
   }
 
   // Ask background for the mode based on the TAB's primary URL
   // (not the iframe URL) so all frames in a tab share one mode.
   // This message round-trip is faster than the inject.js file fetch,
   // so the mode is set before inject.js wrappers start intercepting.
-  chrome.runtime.sendMessage({ type: 'get_tab_mode' }, (response) => {
+  extensionApi.runtime.sendMessage({ type: 'get_tab_mode' }, (response) => {
     if (response && response.mode) {
       setMode(response.mode);
     }
@@ -42,14 +43,14 @@
 
   // ─── Inject the detection script into the page context ───────────
   const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('inject.js');
+  script.src = extensionApi.runtime.getURL('inject.js');
   script.onload = function () {
     this.remove();
   };
   (document.head || document.documentElement).appendChild(script);
 
   // ─── Listen for mode changes from background (live toggle) ───────
-  chrome.runtime.onMessage.addListener((msg) => {
+  extensionApi.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'fp_mode_changed') {
       setMode(msg.mode);
     }
@@ -69,7 +70,7 @@
     }
 
     try {
-      chrome.runtime.sendMessage({
+      extensionApi.runtime.sendMessage({
         type: 'fp_detected',
         category: e.data.category,
         api: e.data.api,
