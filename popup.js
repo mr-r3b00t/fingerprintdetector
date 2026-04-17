@@ -15,6 +15,7 @@ const CATEGORY_ICONS = {
   connection: '\uD83D\uDCF6',
   extensions: '\uD83D\uDC41\uFE0F',
 };
+const extensionApi = typeof browser !== 'undefined' ? browser : chrome;
 
 function formatTime(ts) {
   const d = new Date(ts);
@@ -80,7 +81,7 @@ document.getElementById('mode-toggle').addEventListener('click', (e) => {
 // "Set for site" — save mode for this specific domain
 document.getElementById('set-site-btn').addEventListener('click', () => {
   if (!currentDomain) return;
-  chrome.runtime.sendMessage({
+  extensionApi.runtime.sendMessage({
     type: 'set_mode',
     domain: currentDomain,
     mode: currentMode,
@@ -93,7 +94,7 @@ document.getElementById('set-site-btn').addEventListener('click', () => {
 
 // "Set as default" — save mode as global default
 document.getElementById('set-default-btn').addEventListener('click', () => {
-  chrome.runtime.sendMessage({
+  extensionApi.runtime.sendMessage({
     type: 'set_global_mode',
     mode: currentMode,
   }, () => {
@@ -106,7 +107,7 @@ document.getElementById('set-default-btn').addEventListener('click', () => {
 // "Reset to default" — remove site-specific override
 document.getElementById('reset-site-btn').addEventListener('click', () => {
   if (!currentDomain) return;
-  chrome.runtime.sendMessage({
+  extensionApi.runtime.sendMessage({
     type: 'set_mode',
     domain: currentDomain,
     mode: null, // null = remove override
@@ -287,7 +288,7 @@ function renderData(data) {
 let currentData = null;
 
 async function loadData() {
-  const [tab] = await chrome.tabs.query({
+  const [tab] = await extensionApi.tabs.query({
     active: true,
     currentWindow: true,
   });
@@ -303,7 +304,7 @@ async function loadData() {
   }
 
   // Fetch detection data and mode info in parallel
-  chrome.runtime.sendMessage(
+  extensionApi.runtime.sendMessage(
     { type: 'get_data', tabId: tab.id, domain: currentDomain },
     (response) => {
       if (response) {
@@ -313,7 +314,7 @@ async function loadData() {
     }
   );
 
-  chrome.runtime.sendMessage(
+  extensionApi.runtime.sendMessage(
     { type: 'get_mode', domain: currentDomain },
     (response) => {
       if (response) {
@@ -362,21 +363,21 @@ document.getElementById('export-btn').addEventListener('click', () => {
   const safeDomain = (currentData.domain || 'unknown').replace(/[^a-zA-Z0-9.\-]/g, '_');
   const filename = `fingerprint-report-${safeDomain}-${Date.now()}.json`;
 
-  chrome.downloads.download({ url, filename, saveAs: true }, () => {
+  extensionApi.downloads.download({ url, filename, saveAs: true }, () => {
     URL.revokeObjectURL(url);
   });
 });
 
 // ─── Clear button ─────────────────────────────────────────────────
 document.getElementById('clear-btn').addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({
+  const [tab] = await extensionApi.tabs.query({
     active: true,
     currentWindow: true,
   });
 
   if (!tab) return;
 
-  chrome.runtime.sendMessage(
+  extensionApi.runtime.sendMessage(
     { type: 'clear_data', tabId: tab.id },
     () => {
       renderData(null);
