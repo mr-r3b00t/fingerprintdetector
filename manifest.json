@@ -3,6 +3,12 @@
   "name": "Fingerprint Detector",
   "version": "1.0.0",
   "description": "Detects when websites attempt to fingerprint your browser by enumerating plugins, hardware, canvas, WebGL, and other APIs.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "fingerprintdetector@xservus.com",
+      "strict_min_version": "121.0"
+    }
+  },
   "permissions": ["activeTab", "tabs", "downloads", "storage", "declarativeNetRequest"],
   "icons": {
     "16": "icons/icon16.png",
@@ -17,7 +23,8 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
